@@ -5,7 +5,7 @@ package main
 import (
 	"log"
 
-	telegraph "github.com/meinside/telegraph-go"
+	telegraph "github.com/indes/telegraph-go"
 )
 
 const (
