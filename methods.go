@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/net/proxy"
 	"io/ioutil"
 	"log"
 	"net"
@@ -42,7 +43,7 @@ func (c *Client) CreateAccount(shortName, authorName, authorURL string) (acc Acc
 	}
 
 	var bytes []byte
-	if bytes, err = httpPost(url, params); err == nil {
+	if bytes, err = c.httpPost(url, params); err == nil {
 		var res APIResponseAccount
 		if err = json.Unmarshal(bytes, &res); err == nil {
 			if res.Ok {
@@ -81,7 +82,7 @@ func (c *Client) EditAccountInfo(shortName, authorName, authorURL string) (acc A
 	}
 
 	var bytes []byte
-	if bytes, err = httpPost(url, params); err == nil {
+	if bytes, err = c.httpPost(url, params); err == nil {
 		var res APIResponseAccount
 		if err = json.Unmarshal(bytes, &res); err == nil {
 			if res.Ok {
@@ -117,7 +118,7 @@ func (c *Client) GetAccountInfo(fields []string) (acc Account, err error) {
 	}
 
 	var bytes []byte
-	if bytes, err = httpPost(url, params); err == nil {
+	if bytes, err = c.httpPost(url, params); err == nil {
 		var res APIResponseAccount
 		if err = json.Unmarshal(bytes, &res); err == nil {
 			if res.Ok {
@@ -145,7 +146,7 @@ func (c *Client) RevokeAccessToken() (acc Account, err error) {
 	}
 
 	var bytes []byte
-	if bytes, err = httpPost(url, params); err == nil {
+	if bytes, err = c.httpPost(url, params); err == nil {
 		var res APIResponseAccount
 		if err = json.Unmarshal(bytes, &res); err == nil {
 			if res.Ok {
@@ -190,7 +191,7 @@ func (c *Client) CreatePage(title, authorName, authorURL string, content []Node,
 	}
 
 	var bytes []byte
-	if bytes, err = httpPost(url, params); err == nil {
+	if bytes, err = c.httpPost(url, params); err == nil {
 		var res APIResponsePage
 		if err = json.Unmarshal(bytes, &res); err == nil {
 			if res.Ok {
@@ -247,7 +248,7 @@ func (c *Client) EditPage(path, title string, content []Node, authorName, author
 	}
 
 	var bytes []byte
-	if bytes, err = httpPost(url, params); err == nil {
+	if bytes, err = c.httpPost(url, params); err == nil {
 		var res APIResponsePage
 		if err = json.Unmarshal(bytes, &res); err == nil {
 			if res.Ok {
@@ -273,7 +274,7 @@ func (c *Client) GetPage(path string, returnContent bool) (page Page, err error)
 	url := fmt.Sprintf("%s/%s/%s", APIBaseURL, "getPage", path)
 
 	var bytes []byte
-	if bytes, err = httpPost(url, map[string]interface{}{
+	if bytes, err = c.httpPost(url, map[string]interface{}{
 		"return_content": returnContent,
 	}); err == nil {
 		var res APIResponsePage
@@ -312,7 +313,7 @@ func (c *Client) GetPageList(offset, limit int) (list PageList, err error) {
 	}
 
 	var bytes []byte
-	if bytes, err = httpPost(url, params); err == nil {
+	if bytes, err = c.httpPost(url, params); err == nil {
 		var res APIResponsePageList
 		if err = json.Unmarshal(bytes, &res); err == nil {
 			if res.Ok {
@@ -356,7 +357,7 @@ func (c *Client) GetViews(path string, year, month, day, hour int) (views PageVi
 	}
 
 	var bytes []byte
-	if bytes, err = httpPost(url, params); err == nil {
+	if bytes, err = c.httpPost(url, params); err == nil {
 		var res APIResponsePageViews
 		if err = json.Unmarshal(bytes, &res); err == nil {
 			if res.Ok {
@@ -439,8 +440,16 @@ func traverseNodes(selections *goquery.Selection) []Node {
 	return nodes
 }
 
+//func httpPost(apiURL string, params map[string]interface{}) (jsonBytes []byte, err error) {
+//	return httpPostWithProxy(apiURL, params, "")
+//}
+
+func (c *Client) httpPost(apiURL string, params map[string]interface{}) (jsonBytes []byte, err error) {
+	return httpPostWithProxy(apiURL, params, c.Socks5Proxy)
+}
+
 // send HTTP POST request (www-form urlencoded)
-func httpPost(apiURL string, params map[string]interface{}) (jsonBytes []byte, err error) {
+func httpPostWithProxy(apiURL string, params map[string]interface{}, socks5Proxy string) (jsonBytes []byte, err error) {
 	v("sending post request to url: %s, params: %#v", apiURL, params)
 
 	var js []byte
@@ -465,10 +474,11 @@ func httpPost(apiURL string, params map[string]interface{}) (jsonBytes []byte, e
 	if req, err = http.NewRequest("POST", apiURL, bytes.NewBufferString(encoded)); err == nil {
 		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Add("Content-Length", strconv.Itoa(len(encoded)))
+		var transport http.Transport
 
-		var res *http.Response
-		client := &http.Client{
-			Transport: &http.Transport{
+		if socks5Proxy == "" {
+
+			transport = http.Transport{
 				Dial: (&net.Dialer{
 					Timeout:   10 * time.Second,
 					KeepAlive: 300 * time.Second,
@@ -477,7 +487,31 @@ func httpPost(apiURL string, params map[string]interface{}) (jsonBytes []byte, e
 				TLSHandshakeTimeout:   10 * time.Second,
 				ResponseHeaderTimeout: 10 * time.Second,
 				ExpectContinueTimeout: 1 * time.Second,
-			},
+			}
+
+		} else {
+			dialer, _ := proxy.SOCKS5(
+				"tcp",
+				socks5Proxy,
+				nil,
+				&net.Dialer{
+					Timeout:   10 * time.Second,
+					KeepAlive: 300 * time.Second,
+				},
+			)
+
+			transport = http.Transport{
+				Dial:                  dialer.Dial,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: 10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			}
+		}
+
+		var res *http.Response
+		client := &http.Client{
+			Transport: &transport,
 		}
 
 		res, err = client.Do(req)

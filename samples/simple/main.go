@@ -26,7 +26,7 @@ func main() {
 	var savedAccessToken string
 
 	// (1) XXX - create a new account,
-	if client, err := telegraph.Create("telegraph-test", "Telegraph Test", ""); err == nil {
+	if client, err := telegraph.Create("telegraph-test", "Telegraph Test", "",""); err == nil {
 		log.Printf("> Created client: %#+v", client)
 
 		savedAccessToken = client.AccessToken
@@ -95,7 +95,7 @@ func main() {
 	}
 
 	// (2) XXX - or load an existing account with your access token
-	if client, err := telegraph.Load(savedAccessToken); err == nil {
+	if client, err := telegraph.Load(savedAccessToken,""); err == nil {
 		log.Printf("> Loaded client: %#+v", client)
 
 		// GetAccountInfo
